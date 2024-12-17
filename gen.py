@@ -4,12 +4,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.random
 import torchvision.transforms as transforms
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt
 import numpy as np
-
 from PIL import Image
-from utils import plot_kernel
-from icecream import ic
 
 
 class splats2d:
@@ -31,23 +28,23 @@ class splats2d:
             kernel_size: int,
             device='cpu'
         ):
-        
+
         """
         > Normalises and reshapes the kernel to RGB channels, pads to match the image size, and translates based on given coords. Basically putting the relevant kernel in the relevant coordinate position.
-        > Multiplies the RGB kernels with given colours, sums up the layers, and returns the final clamped and permuted image.  
+        > Multiplies the RGB kernels with given colours, sums up the layers, and returns the final clamped and permuted image.
 
-        inputs: 
+        inputs:
             mean: torch.Tensor; [b, 2];
                 value lies between [-1, 1], since the meshgrid assumes 0 as the center,
 
-            cholesky_coeff: torch.Tensor; [b, 3];  
+            cholesky_coeff: torch.Tensor; [b, 3];
 
-            opacity: torch.Tensor; [b, 1]; 
+            opacity: torch.Tensor; [b, 1];
                 value lies between [0, 1],
 
             colors: torch.Tensor; [b, 3];
                 value lies between [0, 1],
-            
+
             kernel_size: int;
             device: device
 
@@ -59,8 +56,13 @@ class splats2d:
 
         if self.device is None:
             self.device = device
-        
-        
+
+        # Sending all the tensors to the provided device
+        mean = mean.to(device)
+        cholesky_coeff = cholesky_coeff.to(device)
+        opacity = opacity.to(device)
+        colors = colors.to(device)
+
         # Get the covariance from cholesky_coeff: [B, l1, l2, l3] torch.tensor
 
         # Exponenetiating so as to optimize the logarithm and hence prevent floating point
@@ -75,7 +77,7 @@ class splats2d:
 
         # The covariance matrix for each batch (2x2) should be constructed for each batch element
         cov = torch.stack([
-            torch.stack([l1**2, l1*l2], dim=-1), 
+            torch.stack([l1**2, l1*l2], dim=-1),
             torch.stack([l2*l1, l2**2 + l3**2], dim=-1)
         ], dim=-2).unsqueeze(1).unsqueeze(1)  # Shape: [B, 1, 1, 2, 2]
         # print(cov)
@@ -102,8 +104,8 @@ class splats2d:
 
         # Choosing the range between [-5, 5] to for sampling the points in betweeen as inputs for the gaussian
         start = torch.tensor([-5.0], device=self.device).view(-1, 1) # shape: [1, 1]
-        end = torch.tensor([5.0]).view(-1, 1)
-        samples = start + (end - start) * torch.linspace(0, 1, steps=kernel_size, device=self.device) 
+        end = torch.tensor([5.0], device=self.device).view(-1, 1)
+        samples = start + (end - start) * torch.linspace(0, 1, steps=kernel_size, device=self.device)
 
         # Expanding dims for broadcasting
         samples_x = samples.unsqueeze(-1).expand(-1, -1, kernel_size)
@@ -155,7 +157,7 @@ class splats2d:
         # print(colour_weight)
         assert not torch.isnan(colour_weight).any(), "colour weight contains NaN values"
 
-        # colour_weight = opacity.view(-1, 1, 1) 
+        # colour_weight = opacity.view(-1, 1, 1)
         rgb_values_reshaped = colors.unsqueeze(-1).unsqueeze(-1) * colour_weight.unsqueeze(-1)
         # print(colors)
         # print(rgb_values_reshaped)
@@ -168,7 +170,7 @@ class splats2d:
         # final_image = final_image.permute(1,2,0)
 
         return final_image
-        
+
 
 def max_min_normalization(x: torch.Tensor, dim=0):
     min_val = x.min(dim=dim, keepdim=True).values
@@ -195,9 +197,12 @@ def get_cholesky_from_sigma(sigma_x, sigma_y, cov_xy):
 def extract_data(image_path: str, image_shape: tuple[int], num_splats: int):
 
     image = Image.open(image_path)
+    mean = [0.5, 0.5, 0.5]  # Example values for mean
+    std = [0.5, 0.5, 0.5]   # Example values for std
     transform = transforms.Compose([
         transforms.Resize(image_shape),  # Resize the image to the target shape
         transforms.ToTensor(),  # Convert the PIL image to a PyTorch tensor and normalize to [0, 1]
+        transforms.Normalize(mean, std)
     ])
     original_image = transform(image)
     original_array = np.array(image)
@@ -214,6 +219,12 @@ def extract_data(image_path: str, image_shape: tuple[int], num_splats: int):
 
     return normalized_coords, color_values_tensor, original_image
 
+def denormalize(tensor, mean, std):
+    # Reverse normalization: pixel = (pixel * std) + mean
+    mean = torch.tensor(mean).view(3, 1, 1)  # Reshape mean to match image shape
+    std = torch.tensor(std).view(3, 1, 1)    # Reshape std to match image shape
+    return tensor * std + mean
+
 def optimize(splats: splats2d, image_path: str, image_shape: tuple[int], num_splats: int, kernel_size: int):
 
 
@@ -222,13 +233,13 @@ def optimize(splats: splats2d, image_path: str, image_shape: tuple[int], num_spl
     temp = torch.rand((num_splats, 3),device=splats.device)
     # print(temp)
     # cholesky_coeff = torch.logit(torch.tanh(temp), eps=1e-8)
-    cholesky_coeff = temp 
+    cholesky_coeff = temp
     # print(cholesky_coeff)
     # assert False
     opacity = torch.randn((num_splats, 1), device=splats.device)
     colors = torch.randn((num_splats, 3)).to(splats.device)
-    mean.to(splats.device)
-    target_tensor.to(splats.device)
+    mean = mean.to(splats.device)
+    target_tensor = target_tensor.to(splats.device)
 
     W_values = torch.cat([mean, cholesky_coeff, opacity, colors], dim=1)
     W = nn.Parameter(W_values)
@@ -237,6 +248,8 @@ def optimize(splats: splats2d, image_path: str, image_shape: tuple[int], num_spl
     optimizer = torch.optim.Adam(params=[W], lr=0.01, betas=(0.9, 0.999), weight_decay=1e-5)
     # optimizer = torch.optim.SGD(params=[params], lr=0.01)
     criterion = nn.MSELoss()
+    # criterion = nn.L1Loss()
+    # criterion = ssim
 
 
     num_iter = 1000
@@ -260,26 +273,38 @@ def optimize(splats: splats2d, image_path: str, image_shape: tuple[int], num_spl
             kernel_size=kernel_size,
             device=splats.device,
         )
+        mean = [0.5, 0.5, 0.5]  # Example values for mean
+        std = [0.5, 0.5, 0.5]   # Example values for std
+        transform = transforms.Compose([
+            transforms.Normalize(mean, std)
+        ])
+        raster = transform(raster)
         # ic(raster.shape, target_tensor.shape)
         # print(raster)
         # assert False
+
+        # Normalize the raster
         loss = criterion(raster, target_tensor)
         loss.backward()
         optimizer.step()
 
         if itr % 10 == 0:
             print(f'Epoch {itr}, Loss: {loss.item()}')
-            plt.imshow(raster.permute(1, 2, 0).detach().cpu().numpy())
+            # Denormalizing the image
+            rastertmp = denormalize(raster.detach().cpu(), mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+            plt.imshow(rastertmp.permute(1, 2, 0).cpu().numpy())
             plt.axis("off")
             plt.tight_layout()
-            # plt.show()
-            plt.savefig(f'num{itr}')
+            plt.show()
+            # plt.savefig(f'num{itr}')
+
 
     return W
 
 
 if __name__ == "__main__":
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     image_shape = (128, 128)
     kernel_size = 64
     num_splats = 3000
@@ -297,7 +322,7 @@ if __name__ == "__main__":
     #                    opacity=torch.rand([splats_num]),
     #                    colors=torch.rand([splats_num, 3]),
     #                    kernel_size=kernel_size,
-    #                    device='cpu')
+    #                    device=device)
     
     # print(img.shape)
     # plt.imshow(img.detach().cpu().numpy())
