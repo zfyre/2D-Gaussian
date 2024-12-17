@@ -316,7 +316,7 @@ if __name__ == "__main__":
     # cov_xy = [0.0, 0.0, -0.375]
     # cholesky = get_cholesky_from_sigma(sigma_x, sigma_y, cov_xy)
 
-    gauss = splats2d(image_shape, kernel_size, device='cpu')
+    gauss = splats2d(image_shape, kernel_size, device=device)
     # img = gauss.rasterize(mean=2*torch.rand([splats_num, 2])-1.0,
     #                    cholesky_coeff= torch.rand([splats_num, 3]),
     #                    opacity=torch.rand([splats_num]),
