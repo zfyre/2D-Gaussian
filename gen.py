@@ -273,10 +273,10 @@ def optimize(splats: splats2d, image_path: str, image_shape: tuple[int], num_spl
             kernel_size=kernel_size,
             device=splats.device,
         )
-        mean = [0.5, 0.5, 0.5]  # Example values for mean
-        std = [0.5, 0.5, 0.5]   # Example values for std
+        applied_mean = [0.5, 0.5, 0.5]  # Example values for mean
+        applied_std = [0.5, 0.5, 0.5]   # Example values for std
         transform = transforms.Compose([
-            transforms.Normalize(mean, std)
+            transforms.Normalize(applied_mean, applied_std)
         ])
         raster = transform(raster)
         # ic(raster.shape, target_tensor.shape)

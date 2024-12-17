@@ -1,6 +1,9 @@
 import torch
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
 import torch.nn.functional as F
-
+import matplotlib.pyplot as plt
 
 def rasterize(
         image_size: tuple,              
@@ -129,7 +132,47 @@ def rasterize(
 
     return final_image
 
+def get_cholesky_from_sigma(sigma_x, sigma_y, cov_xy):
+    # Ensure inputs are tensors
+    sigma_x = torch.tensor(sigma_x)
+    sigma_y = torch.tensor(sigma_y)
+    cov_xy = torch.tensor(cov_xy)
+
+    # Calculate the components of the Cholesky decomposition
+    l1 = sigma_x
+    l2 = cov_xy / sigma_x
+    l3 = torch.sqrt((sigma_y * sigma_x)**2 - cov_xy**2) / sigma_x
+
+    # Stack the results into a tensor with shape [B, 3]
+    return torch.stack([l1, l2, l3], dim=-1)
+
+def plot_raster(raster, save_path=None):
+    plt.imshow(raster.detach().permute(1, 2, 0).cpu().numpy())
+    plt.axis("off")
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path)
+    plt.show()
 
 if __name__ == "__main__":
 
-    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    image_shape = (128, 128)
+    kernel_size = 64
+    num_splats = 100
+    colours = torch.tensor([(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)])
+    vectors = torch.tensor([(-0.5, -0.5), (0.8, 0.8), (0.5, 0.5)])
+
+    sigma_x = [0.5, 0.5, 0.5]
+    sigma_y = [2.0, 0.5, 1.5]
+    cov_xy = [0.0, 0.0, -0.375]
+    cholesky = get_cholesky_from_sigma(sigma_x, sigma_y, cov_xy)
+    img = rasterize(
+        image_size=image_shape,
+        mean=2*torch.rand([num_splats, 2])-1.0,
+        cholesky_coeff= torch.rand([num_splats, 3]),
+        opacity=torch.rand([num_splats]),
+        colors=torch.rand([num_splats, 3]),
+        kernel_size=kernel_size,
+        device=device
+    )
