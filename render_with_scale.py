@@ -7,6 +7,7 @@ import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
+from ssim import ssim_loss
 
 """CHANGES MADE:
 
@@ -270,7 +271,7 @@ def optimize(splats: splats2d, image_path: str, image_shape: tuple[int], num_spl
         raster = transform(raster)
 
         # Normalize the raster
-        loss = criterion(raster, target_tensor)
+        loss = 0.4*ssim_loss(raster, target_tensor) + 0.6*criterion(raster, target_tensor)
         loss.backward()
         optimizer.step()
 
